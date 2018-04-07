@@ -13,33 +13,6 @@ import org.jgrapht.graph._
 
 import scala.reflect.ClassTag
 
-class BufferedIterator[A: ClassTag](iter:Iterator[A], size:Int=1000) extends Iterator[A]{
-  val buffer = new Array[A](size)
-  var tail = 0
-  var i = 0
-
-  def head = {
-    if (i==tail) reload()
-    if (i==tail) throw new Exception("Empty Iterator!")
-    buffer(i)
-  }
-
-  private def reload(): Unit ={
-    i = 0
-    tail = 0
-    while (iter.hasNext && tail!=buffer.size){
-      buffer(tail) = iter.next()
-      tail += 1
-    }
-  }
-  override def hasNext = iter.hasNext
-  override def next() = {
-    if (i==tail) reload()
-    if (i==tail) throw new Exception("Empty Iterator!")
-    i += 1
-    buffer(i-1)
-  }
-}
 class SlidingWindow(val size:Int){
   val window = Array.fill(size)(Array(0,0,0,0))
   def inc(i:Int,j:Int) = window(i%size)(j) += 1
@@ -140,81 +113,15 @@ class BamFilesParallelScanner(filenames:Array[String]){
   def getChrom = header.getSequence(cid).getSequenceName
   def hasNext = cid<header.size
 }
-class BamLoader(){
-  val code = Map[Char,Int]('A'->0,'C'->1,'G'->2,'T'->3)
-  def contigs = mutable.Map[String,Int]() // get contig length by name
-  def loadBaseCountOnGenomeFromBam(bamFilename: String) = {
-    val startTimeStamp = System.currentTimeMillis()/1000.0
-    val bamFile = htsjdk.samtools.SamReaderFactory.makeDefault().open(new java.io.File(bamFilename))
-    val header = bamFile.getFileHeader
-    val contigs = header.getSequenceDictionary
-    val counter = mutable.Map[String,Array[Array[Int]]]() // counter(contig)(pos)(base) = count
-    for ( i <- 0 until contigs.size){
-      val contig = contigs.getSequence(i)
-      this.contigs(contig.getSequenceName) = contig.getSequenceLength
-      counter(contig.getSequenceName) = Array.fill(contig.getSequenceLength+1)(Array(0,0,0,0))
-    }
-    var recordCount = 0
-    val pb = new ProgressBar("Tester", 10000)
-    for ( record <- ProgressBar.wrap(bamFile.iterator,s"Loading $bamFilename").asScala) {
-      recordCount += 1
-      if (recordCount%10000==0) pb.step()
-      val read = record.getReadString
-      if (!record.getReadUnmappedFlag)
-        for ( i <- 1 to record.getReadLength if read(i-1)!='N'){
-          counter(record.getContig)(record.getReferencePositionAtReadPosition(i))(code(read(i-1))) += 1
-        }
-    }
-    println(f"[Success] load $recordCount records from $bamFilename in ${System.currentTimeMillis()/1000.0-startTimeStamp}%.1f seconds")
-    counter
-  }
-}
 
 class Soups(val bamFilenames:Array[String]){
-  val bamLoader = new BamLoader()
   val bamScanner = new BamFilesParallelScanner(bamFilenames)
   def checkAndNormalize(v:Array[Int]): Array[Double] ={
     val sum = v.sum.toDouble
     val v2 = v.map(x=>if (x>=sum*0.9) 1 else 0 )
-    if (sum<5) return null
-    if (v2.sum==1) v2.map(_.toDouble) else null
+    if (v2.sum!=1 || sum<5) null else v2.map(_.toDouble)
   }
   def distance(a:Array[Double],b:Array[Double]) = if (a==null || b==null) 10.0 else (a zip b map {case (x,y)=>(x-y)*(x-y)}).sum / 2
-  def getTwoEndGV(contig: String, length:Int, bamPileUps: Array[mutable.Map[String, Array[Array[Int]]]]):(Array[Int],Array[Int]) = {
-
-    val GenotypesVectorTable:ArrayBuffer[Array[Int]] = ArrayBuffer[Array[Int]]()
-    val GenotypesVectorCount:ArrayBuffer[Int] = ArrayBuffer[Int]()
-    val GenotypesVectorPosSum:ArrayBuffer[Double] = ArrayBuffer[Double]()
-    val contigPileUps = bamPileUps.map(_(contig))
-    for ( pos <- 1 to length) {
-      val ufs = new UnionFindSet()
-      val ratios = contigPileUps.map(_(pos)).map(checkAndNormalize)
-      for ( i <- ratios.indices )
-        for ( j <- 0 until i if distance(ratios(i),ratios(j))<0.05)
-          ufs.union(i,j)
-      val GenotypesVector = ratios.indices.map(x=>if (ratios(x)==null) -1 else ufs.find(x)).toArray
-      if (GenotypesVector.exists(_!=0)){
-        var GVindex = GenotypesVectorTable.indexWhere(_.sameElements(GenotypesVector))
-        if (GVindex == -1) {
-          GVindex = GenotypesVectorTable.length
-          GenotypesVectorTable.append(GenotypesVector)
-          GenotypesVectorCount.append(0)
-          GenotypesVectorPosSum.append(0.0)
-        }
-        GenotypesVectorCount(GVindex) += 1
-        GenotypesVectorPosSum(GVindex) += pos
-      }
-    }
-    if (GenotypesVectorTable.isEmpty) return null
-    if (GenotypesVectorTable.length==1) return (GenotypesVectorTable(0),GenotypesVectorTable(0))
-    val mostCommon = GenotypesVectorTable.indices.sortBy(GenotypesVectorCount)
-    val top = mostCommon(0)
-    val second = mostCommon(1)
-    if (GenotypesVectorPosSum(top)/GenotypesVectorCount(top)<GenotypesVectorPosSum(second)/GenotypesVectorCount(second))
-      (GenotypesVectorTable(top),GenotypesVectorTable(second))
-    else
-      (GenotypesVectorTable(second),GenotypesVectorTable(top))
-  }
 
   def pairwiseMutualBest(contigsGV: mutable.Map[String, Array[Int]]) = {
     def support(x:Array[Int],y:Array[Int]) = {
