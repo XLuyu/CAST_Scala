@@ -7,11 +7,8 @@ import scala.collection.mutable.ArrayBuffer
 import htsjdk._
 import htsjdk.samtools.SAMRecord
 import me.tongfei.progressbar._
-import org.jgrapht._
 import org.jgrapht.alg.matching.MaximumWeightBipartiteMatching
 import org.jgrapht.graph._
-
-import scala.reflect.ClassTag
 
 class SlidingWindow(val size:Int){
   val window = Array.fill(size)(Array(0,0,0,0))
@@ -27,26 +24,26 @@ class BamFileScanner(filename:String){
   val header = bamFile.getFileHeader.getSequenceDictionary
   val fileIterator = bamFile.iterator.asScala.buffered
   var spanReads = ArrayBuffer[SAMRecord]()
-  var sw = new SlidingWindow(10000)
-  var maxReadSpan = 0
+  var sw = new SlidingWindow(1000000)
 
   val code = Map[Char,Int]('A'->0,'C'->1,'G'->2,'T'->3)
-  var cid = 0
-  private var maxpos = header.getSequence(cid).getSequenceLength
-  var pos = 0
+  var maxReadSpan, cached = 0
 
-  private def updateSpanReadsByPosition(): Unit ={
+  private def updateSpanReadsByPosition(cid:Int,pos:Int): Unit ={
     spanReads = spanReads.filter(record=>record.getReferenceIndex==cid && pos<=record.getEnd)
+    cached = pos + sw.size/2
     var continue = true
-    while (fileIterator.hasNext && continue ){
-      if (fileIterator.head.getReadUnmappedFlag || fileIterator.head.getMappingQuality==0) fileIterator.next()
+    while (fileIterator.hasNext && continue )
+      if (fileIterator.head.getReadUnmappedFlag || fileIterator.head.getMappingQuality==0)
+        fileIterator.next()
       else {
         val icid = fileIterator.head.getReferenceIndex
         val ipos = fileIterator.head.getAlignmentStart
-        if (icid<cid || icid==cid && ipos<=pos){
+        if (icid<cid) fileIterator.next() else
+        if (icid==cid && ipos<=cached){
           val record = fileIterator.next()
           maxReadSpan = Math.max(maxReadSpan,record.getLengthOnReference)
-          if (record.getLengthOnReference>sw.size/2)
+          if (record.getLengthOnReference>sw.size/3)
             spanReads.append(record)
           else {
             val read = record.getReadString
@@ -57,20 +54,13 @@ class BamFileScanner(filename:String){
         }
         else continue = false
       }
-    }
   }
-  def nextPosition() = { // return true if on same contig
-    pos += 1
-    if (pos>maxpos){
-      cid += 1
+  def get(cid:Int,pos:Int) = {
+    if (pos==1) {
       sw = new SlidingWindow(10000)
-      if (cid<header.size) maxpos = header.getSequence(cid).getSequenceLength
-      pos = 1
+      cached = 0
     }
-    pos!=1
-  }
-  def get() = {
-    updateSpanReadsByPosition()
+    if (pos>cached) updateSpanReadsByPosition(cid,pos)
     val vector = Array(0,0,0,0)
     for ( record <- spanReads) {
       val rpos = record.getReadPositionAtReferencePosition(pos)
@@ -81,9 +71,16 @@ class BamFileScanner(filename:String){
     }
     (vector zip sw.getAndClean(pos)).map(x=>x._1+x._2)
   }
+  def getTotalMappedBase ={
+    val iter = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename)).iterator().asScala.buffered
+    (for ( i <- iter if !i.getReadUnmappedFlag) yield i.getReadLength.toLong).sum
+  }
 }
 class BamFilesParallelScanner(filenames:Array[String]){
   val bamScanners = filenames.map{filename => new BamFileScanner(filename)}
+  val bamScannersPar = bamScanners.par
+  val pool = new collection.parallel.ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool())
+  bamScannersPar.tasksupport = pool
   val headers = bamScanners.map(_.header)
   val header = headers(0)
   if (headers.exists(_!=header)) throw new Exception("[Error] Headers in input files are inconsistent")
@@ -98,18 +95,24 @@ class BamFilesParallelScanner(filenames:Array[String]){
   def nextPosition() = { // return true if on same contig
     pos += 1
     if (pos>maxpos){
-      pb.stepBy(pos%1000)
-      pb.setExtraMessage(s"finished $getChrom")
+      pb.stepBy(pos%1000).setExtraMessage(s"finished $getChrom")
       cid += 1
+      pos = 1
       if (cid<header.size) maxpos = header.getSequence(cid).getSequenceLength
       else pb.stop()
-      pos = 1
     }
     if (pos%1000==0) pb.stepBy(1000)
-    bamScanners.map(_.nextPosition())
     pos!=1
   }
-  def get() = bamScanners.map { _.get()}
+  def getCoverage = {
+    bamScanners.map{_.getTotalMappedBase/header.getReferenceLength.toDouble}
+  }
+  def get() = {
+    if (pos==1 || pos>bamScanners.head.cached)
+      bamScannersPar.map { _.get(cid, pos)}.toArray
+    else
+      bamScanners.map { _.get(cid, pos)}
+  }
   def getChrom = header.getSequence(cid).getSequenceName
   def hasNext = cid<header.size
 }
@@ -120,6 +123,7 @@ class Soups(val bamFilenames:Array[String]){
     val sum = v.sum.toDouble
     val v2 = v.map(x=>if (x>=sum*0.9) 1 else 0 )
     if (v2.sum!=1 || sum<5) null else v2.map(_.toDouble)
+//    if (sum<5) null else v.map(_/sum)
   }
   def distance(a:Array[Double],b:Array[Double]) = if (a==null || b==null) 10.0 else (a zip b map {case (x,y)=>(x-y)*(x-y)}).sum / 2
 
@@ -199,6 +203,8 @@ class Soups(val bamFilenames:Array[String]){
     (contig,(GVSpanTable.head.GV,GVSpanTable.last.GV))
   }
   def run(): Unit ={
+//    val coverages = bamScanner.getCoverage
+//    println(coverages.mkString(" "))
     val contigsTwoEndGV = getAllGVFromScanner
     val contigsOneEndGV = contigsTwoEndGV.flatMap {case (contig,(v1,v2)) => List(("+"+contig,v1),("-"+contig,v2))}
     val finalLink = pairwiseMutualBest(contigsOneEndGV)
