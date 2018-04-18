@@ -8,5 +8,6 @@ libraryDependencies += "org.biojava" % "biojava-core" % "4.2.11"
 
 libraryDependencies += "me.tongfei" % "progressbar" % "0.6.0"
 
+scalacOptions := Seq("-unchecked", "-deprecation")
 
 resolvers += "BioJava repository" at "http://www.biojava.org/download/maven/"

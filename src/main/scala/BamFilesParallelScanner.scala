@@ -54,7 +54,7 @@ class BamFileScanner(filename:String){
         if (code.contains(c)) vector(code(c)) += 1
       }
     }
-    (vector zip sw.getAndClean(pos)).map(x=>x._1+x._2)
+    new Genotype((vector zip sw.getAndClean(pos)).map(x=>x._1.toDouble+x._2)).normalize()
   }
   def getTotalMappedBase ={
     val iter = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename)).iterator().asScala.buffered
@@ -64,7 +64,7 @@ class BamFileScanner(filename:String){
 class BamFilesParallelScanner(filenames:Array[String]){
   val bamScanners = filenames.map{filename => new BamFileScanner(filename)}
   val bamScannersPar = bamScanners.par
-  val pool = new collection.parallel.ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool())
+  val pool = new collection.parallel.ForkJoinTaskSupport(new java.util.concurrent.ForkJoinPool())
   bamScannersPar.tasksupport = pool
   val headers = bamScanners.map(_.header)
   val header = headers(0)
