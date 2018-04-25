@@ -17,25 +17,28 @@ class Genotype(var acgt:Array[Double]){
     if (this.isUnreliable || other.isUnreliable)
       10.0
     else
-      (this.acgt zip other.acgt map {case (x,y)=>(x-y)*(x-y)}).sum / 2
+      (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
   }
 }
 
-class Matrix(size:Int){
-  var data = Array.ofDim[Double](size,size)
+class Matrix(size:Int, initData:Array[Array[Double]]=null){
+  var data = if (initData!=null) initData else Array.ofDim[Double](size,size)
   def *=(factor:Double) = {
     for (i <- data.indices; j <- data(i).indices)
       data(i)(j) *= factor
     this
   }
-  def +=(other:Array[Array[Double]]) = {
+  def +=(other:Matrix) = {
     for (i <- data.indices; j <- data(i).indices)
-      data(i)(j) += other(i)(j)
+      data(i)(j) += other.data(i)(j)
     this
   }
-  def :=(source:Array[Array[Double]]) =
+  def copy = {
+    val other = new Matrix(data.length)
     for ( i <- data.indices ; j <- data(i).indices)
-      data(i)(j) = source(i)(j)
+      other.data(i)(j) = data(i)(j)
+    other
+  }
   def normalized = {
     val max = data.map(_.max)
     if (!max.contains(0.0)) {
