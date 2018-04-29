@@ -138,15 +138,13 @@ class Soups(val bamFilenames:Array[String]){
     GVmap
   }
   def pairwiseMutualBest(contigsGV: mutable.Map[String, Matrix]) = {
-
-    val bestMatch = for ( (k,v) <- contigsGV ) yield {
+    val candidate = ArrayBuffer[(String,(String,Double))]()
+    for ( (k,v) <- contigsGV ) yield {
       val contig = k.substring(1)
       val similarities = contigsGV.filter(_._1.substring(1)!=contig).mapValues(v2=>support(v.data,v2.data))
-//      val similarities = contigsGV.filter(_._1!=k).mapValues(v2=>support(v.data,v2.data))
-      val best = similarities.maxBy(_._2)
-      if (similarities.count(_._2==best._2)>1) (k,null) else (k,best)
+      similarities.filter(_._2>0.6).foreach(x=>candidate.append((k,x)))
     }
-    bestMatch.filter { case (k,v) => v!=null && bestMatch(v._1)!=null && bestMatch(v._1)._1==k }
+    candidate
   }
   def run(): Unit ={
 //    val coverages = bamScanner.getCoverage
