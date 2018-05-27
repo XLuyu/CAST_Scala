@@ -3,6 +3,7 @@ import htsjdk.samtools.SAMRecord
 import me.tongfei.progressbar.ProgressBar
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable
 
 class BamFileScanner(filename:String){
   val bamFile = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename))
@@ -14,8 +15,13 @@ class BamFileScanner(filename:String){
 
   val code = Map[Char,Int]('A'->0,'C'->1,'G'->2,'T'->3)
   var maxReadSpan, cached = 0
+  var cigarRegex = raw"(\d+)[A-LN-Z]".r
+  var coverageStat = mutable.Map[Int,Int]().withDefaultValue(0)
 
-  def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getCigarString.contains("S") || read.getMateReferenceName!=read.getReferenceName || read.hasAttribute("XA")
+  def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getMateReferenceName!=read.getReferenceName ||
+                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).fold(0)(_+_)>10 ||
+                                  read.hasAttribute("XA")
+
   private def updateSpanReadsByPosition(cid:Int,pos:Int): Unit ={
     spanReads = spanReads.filter(record=>record.getReferenceIndex==cid && pos<=record.getEnd)
     cached = pos + sw.size/2
@@ -61,12 +67,17 @@ class BamFileScanner(filename:String){
         if (isBadRead(record)) badCount += 1
       }
     }
-    val count = (vector zip sw.getAndClean(pos)).map(x=>x._1.toDouble+x._2)
-//    if (badCount+badRegion.getAndClean(pos)>0.1*count.sum)
-    if (!count.exists(_/count.sum>0.9))
+    val count = (vector zip sw.getAndClean(pos)).map(x=>x._1+x._2)
+    if (badCount+badRegion.getAndClean(pos)>0.1*count.sum || count.sum>180)
+//    if (!count.exists(_/count.sum>0.9))
       new Genotype(Array(0.0,0.0,0.0,0.0))
-    else
-      new Genotype(count).proportioning()
+    else {
+      if (count.sum>5) coverageStat(count.sum) += 1
+      new Genotype(count.map(_.toDouble)).proportioning()
+    }
+  }
+  def getCoverageLimit = {
+    if (coverageStat.isEmpty) 0 else coverageStat.maxBy(_._2)._1 * 2
   }
   def getTotalMappedBase ={
     val iter = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename)).iterator().asScala.buffered
@@ -110,6 +121,7 @@ class BamFilesParallelScanner(filenames:Array[String]){
     else
       bamScanners.map { _.get(cid, pos)}
   }
+  def getCoverageLimit = bamScanners.map(_.getCoverageLimit)
   def getChrom = header.getSequence(cid).getSequenceName
   def hasNext = cid<header.size
 }

@@ -58,22 +58,34 @@ class Soups(val bamFilenames:Array[String]){
     (for ( i <- a.indices ) yield{
       val q = a(i).indices.filter(_!=i).map(j=>a(i)(j))
       val p = b(i).indices.filter(_!=i).map(j=>b(i)(j))
-      PearsonCorrelationSimilarity(q,p)
+      Math.abs(PearsonCorrelationSimilarity(q,p))
     }).sum/a.length
+  }
+  def preliminaryDist(vector:Array[Genotype]) = {
+    var max = (0.0,0.0,0.0,0.0)
+    var min = (1.0,1.0,1.0,1.0)
+    for ( gt <- vector) {
+      max = (Math.max(max._1,gt.acgt(0)),Math.max(max._2,gt.acgt(1)),Math.max(max._3,gt.acgt(2)),Math.max(max._4,gt.acgt(3)))
+      min = (Math.min(min._1,gt.acgt(0)),Math.min(min._2,gt.acgt(1)),Math.min(min._3,gt.acgt(2)),Math.min(min._4,gt.acgt(3)))
+    }
+    (max._1-min._1)+(max._2-min._2)+(max._3-min._3)+(max._4-min._4)
   }
   def getOneChromGVFromScanner:ArrayBuffer[(String,(Matrix,Matrix))] ={
     // scan this contig to get all snp sites
     val contig = bamScanner.getChrom
     val contiglen = bamScanner.header.getSequence(contig).getSequenceLength
     val maxMisassembleSpan = bamScanner.header.getReferenceLength/100
-    val sites = new ArrayBuffer[(Int,Array[Genotype])](contiglen/1000)
+    var sites = new ArrayBuffer[(Int,Array[Genotype])](contiglen/1000)
     do {
       val genotypeVector = bamScanner.get()
-      if ( !genotypeVector.exists(_.isUnreliable) && //contig=="tig00000046_pilon" &&
+      if ( !genotypeVector.exists(_.isUnreliable) && preliminaryDist(genotypeVector)>=0.4 &&
         !genotypeVectorToDistanceMatrix(genotypeVector).exists(x=>{ val sx = x.sorted; sx.last-sx(1)<0.2})) {
         sites.append((bamScanner.pos, genotypeVector))
       }
     } while (bamScanner.nextPosition())
+    val coverageLimit = bamScanner.getCoverageLimit
+    coverageLimit.foreach(x=>print(x+","))
+    sites = sites.filter { x => !x._2.indices.exists(i=>x._2(i).sum>coverageLimit(i)) }
     if (sites.length<2) {
       println(f"\n[$contig] SNP: ${sites.length} sites (No enough SNP)")
       return new ArrayBuffer[(String,(Matrix,Matrix))]()
