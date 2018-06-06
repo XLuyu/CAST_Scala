@@ -47,7 +47,7 @@ class Soups(val bamFilenames:Array[String]){
     for ( gi <- v) yield
       for ( gj <- v) yield {
         val d = gi.distance(gj)
-        if (d < 0.05) 0 else d
+        if (d < 0.1) 0 else d
       }
   }
   def support(a:Array[Array[Double]],b:Array[Array[Double]]) = {
@@ -84,7 +84,7 @@ class Soups(val bamFilenames:Array[String]){
       }
     } while (bamScanner.nextPosition())
     val coverageLimit = bamScanner.getCoverageLimit
-    coverageLimit.foreach(x=>print(x+","))
+    coverageLimit.foreach(x=>print(f"$x%.1f, "))
     sites = sites.filter { x => !x._2.indices.exists(i=>x._2(i).sum>coverageLimit(i)) }
     if (sites.length<2) {
       println(f"\n[$contig] SNP: ${sites.length} sites (No enough SNP)")

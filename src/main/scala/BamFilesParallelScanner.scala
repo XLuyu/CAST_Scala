@@ -15,11 +15,11 @@ class BamFileScanner(filename:String){
 
   val code = Map[Char,Int]('A'->0,'C'->1,'G'->2,'T'->3)
   var maxReadSpan, cached = 0
-  var cigarRegex = raw"(\d+)[A-LN-Z]".r
-  var coverageStat = mutable.Map[Int,Int]().withDefaultValue(0)
+  var cigarRegex = raw"(\d+)[SH]".r
+  var coverageStat = mutable.Map[Int,Long]().withDefaultValue(0)
 
   def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getMateReferenceName!=read.getReferenceName ||
-                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).fold(0)(_+_)>10 ||
+                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).sum+read.getIntegerAttribute("NM")>0.1*read.getReadLength ||
                                   read.hasAttribute("XA")
 
   private def updateSpanReadsByPosition(cid:Int,pos:Int): Unit ={
@@ -67,17 +67,22 @@ class BamFileScanner(filename:String){
         if (isBadRead(record)) badCount += 1
       }
     }
+    badCount += badRegion.getAndClean(pos)
     val count = (vector zip sw.getAndClean(pos)).map(x=>x._1+x._2)
-    if (badCount+badRegion.getAndClean(pos)>0.1*count.sum || count.sum>180)
+    if (count.max<count.sum*0.9 && badCount>0.1*count.sum || badCount>0.9*count.sum)
 //    if (!count.exists(_/count.sum>0.9))
       new Genotype(Array(0.0,0.0,0.0,0.0))
     else {
-      if (count.sum>5) coverageStat(count.sum) += 1
+      coverageStat(count.sum) += 1
       new Genotype(count.map(_.toDouble)).proportioning()
     }
   }
   def getCoverageLimit = {
-    if (coverageStat.isEmpty) 0 else coverageStat.maxBy(_._2)._1 * 2
+//    println(f"${coverageStat.foldLeft(0L)((a,b)=>a+b._1*b._2)}/${coverageStat.foldLeft(0)(_+_._2)}")
+    val lowerbound = coverageStat.foldLeft(0L)((a,b)=>a+b._1*b._2)/coverageStat.foldLeft(0L)(_+_._2)
+    if (coverageStat.isEmpty) 0.0 else {
+      coverageStat.filter(_._1>=lowerbound).maxBy(_._2)._1 * 1.8
+    }
   }
   def getTotalMappedBase ={
     val iter = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename)).iterator().asScala.buffered
