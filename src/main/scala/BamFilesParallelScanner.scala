@@ -69,20 +69,14 @@ class BamFileScanner(filename:String){
     }
     badCount += badRegion.getAndClean(pos)
     val count = (vector zip sw.getAndClean(pos)).map(x=>x._1+x._2)
-    if (count.max<count.sum*0.9 && badCount>0.1*count.sum || badCount>0.9*count.sum)
-//    if (!count.exists(_/count.sum>0.9))
-      new Genotype(Array(0.0,0.0,0.0,0.0))
-    else {
-      coverageStat(count.sum) += 1
-      new Genotype(count.map(_.toDouble)).proportioning()
-    }
+    val genotype = new Genotype(count.map(_.toDouble),badCount)
+    if (genotype.isNonRepeat) coverageStat(count.sum) += 1
+    genotype
   }
   def getCoverageLimit = {
 //    println(f"${coverageStat.foldLeft(0L)((a,b)=>a+b._1*b._2)}/${coverageStat.foldLeft(0)(_+_._2)}")
     val lowerbound = coverageStat.foldLeft(0L)((a,b)=>a+b._1*b._2)/coverageStat.foldLeft(0L)(_+_._2)
-    if (coverageStat.isEmpty) 0.0 else {
-      coverageStat.filter(_._1>=lowerbound).maxBy(_._2)._1 * 1.8
-    }
+    if (coverageStat.isEmpty) 0.0 else coverageStat.filter(_._1>=lowerbound).maxBy(_._2)._1.toDouble
   }
   def getTotalMappedBase ={
     val iter = samtools.SamReaderFactory.makeDefault().open(new java.io.File(filename)).iterator().asScala.buffered

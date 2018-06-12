@@ -14,31 +14,11 @@ class Soups(val bamFilenames:Array[String]){
   val bamScanner = new BamFilesParallelScanner(bamFilenames)
   val stringer = new Stringer()
 
-  def PearsonCorrelationSimilarity(vec1 : IndexedSeq[Double], vec2 : IndexedSeq[Double]): Double = {
-    val sum_vec1 = vec1.sum
-    val sum_vec2 = vec2.sum
-
-    val square_sum_vec1 = vec1.map(x => x * x).sum
-    val square_sum_vec2 = vec2.map(x => x * x).sum
-
-    val zipVec = vec1.zip(vec2)
-
-    val product = zipVec.map(x => x._1 * x._2).sum
-    val numerator = product - (sum_vec1 * sum_vec2 / vec1.length)
-
-    val dominator = math.sqrt((square_sum_vec1 - sum_vec1*sum_vec1 / vec1.length) * (square_sum_vec2 - sum_vec2*sum_vec2 / vec2.length))
-
-    if(dominator == 0)
-      0
-    else
-      numerator / (dominator * 1.0)
-  }
-
   def support(a:Array[Array[Double]],b:Array[Array[Double]]) = {
     (for ( i <- a.indices ) yield{
       val q = a(i).indices.filter(_!=i).map(j=>a(i)(j))
       val p = b(i).indices.filter(_!=i).map(j=>b(i)(j))
-      Math.abs(PearsonCorrelationSimilarity(q,p))
+      Math.abs(Util.PearsonCorrelationSimilarity(q,p))
     }).sum/a.length
   }
   def getOneChromGVFromScanner:ArrayBuffer[(String,(Matrix,Matrix))] ={
@@ -52,9 +32,9 @@ class Soups(val bamFilenames:Array[String]){
         sites.append((bamScanner.pos, gv))
       }
     } while (bamScanner.nextPosition())
-    val coverageLimit = bamScanner.getCoverageLimit
-    coverageLimit.foreach(x=>print(f"$x%.0f, "))
-    sites = sites.filter { case (_,gv) => !gv.consistentWithDepthLimit(coverageLimit) }
+    val coverage = bamScanner.getCoverageLimit
+    coverage.foreach(x=>print(f"$x%.0f, "))
+    sites = sites.filter { case (_,gv) => gv.consistentWithDepth(coverage) }
     if (sites.length<2) {
       println(f"\n[$contig] SNP: ${sites.length} sites (No enough SNP)")
       return new ArrayBuffer[(String,(Matrix,Matrix))]()

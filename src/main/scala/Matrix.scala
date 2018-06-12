@@ -1,23 +1,16 @@
 /**
   * Created by workshop on 14-Apr-18.
   */
-class Genotype(var acgt:Array[Double]){
+class Genotype(var acgt:Array[Double], val badCount:Int=0){
   val sum = acgt.sum
-  val max = acgt.max
-  def isUnreliable = sum < 5
-  def proportioning() = {
-    if (sum!=0) acgt = acgt.map(_/sum)
-    this
-  }
-  def normalize() = {
-    if (max!=0) acgt = acgt.map(_/max)
-    this
-  }
+  if (sum!=0) acgt = acgt.map(_/sum)
+  def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
+  def isReliable = 5 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum //todo: 1<=sum
   def distance(other:Genotype) = {
-    if (this.isUnreliable || other.isUnreliable)
-      10.0
-    else
+    if (this.isReliable && other.isReliable)
       (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
+    else
+      Double.NaN
   }
 }
 
@@ -29,9 +22,7 @@ class GenotypeVector(val vector:Array[Genotype]){
           if (d < 0.1) 0 else d
         }
   }
-  def isReliable = {
-    !vector.exists(_.isUnreliable)
-  }
+  def isReliable = vector.forall(_.isReliable)
   def isHeterogeneousPrecheck = {
     var max = (0.0,0.0,0.0,0.0)
     var min = (1.0,1.0,1.0,1.0)
@@ -45,8 +36,13 @@ class GenotypeVector(val vector:Array[Genotype]){
     if (!isHeterogeneousPrecheck) return false
     !toDistMatrix.exists(x=>{ val sx = x.sorted; sx.last-sx(1)<0.2}) // to check if heterogeneity is not from mutation
   }
-  def consistentWithDepthLimit(limit:Array[Double]) = {
-     vector.indices.exists(i=>vector(i).sum>limit(i))
+  def consistentWithDepth(cov:Array[Double]) = {
+    vector.indices.forall(i=>vector(i).sum<=cov(i)*1.8)
+
+    /*todo:
+      &&
+      Util.PearsonCorrelationSimilarity(,cov)<0.3
+      */
   }
 }
 
