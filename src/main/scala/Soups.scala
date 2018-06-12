@@ -13,16 +13,7 @@ class Soups(val bamFilenames:Array[String]){
   val decay = 0.99995
   val bamScanner = new BamFilesParallelScanner(bamFilenames)
   val stringer = new Stringer()
-  def checkAndNormalize(v:Array[Int]): Array[Double] ={
-    val sum = v.sum.toDouble
-//    val v2 = v.map(x=>if (x>=sum*0.9) 1 else 0 )
-//    if (v2.sum!=1 || sum<5) null else v2.map(_.toDouble)
-    if (sum<5) null else v.map(_/sum)
-  }
-  def Normalize(v:Array[Double]): Array[Double] ={
-    val sum = v.max
-    if (sum==0) v else v.map(_/sum)
-  }
+
   def PearsonCorrelationSimilarity(vec1 : IndexedSeq[Double], vec2 : IndexedSeq[Double]): Double = {
     val sum_vec1 = vec1.sum
     val sum_vec2 = vec2.sum
@@ -43,96 +34,65 @@ class Soups(val bamFilenames:Array[String]){
       numerator / (dominator * 1.0)
   }
 
-  def genotypeVectorToDistanceMatrix(v:Array[Genotype]) = {
-    for ( gi <- v) yield
-      for ( gj <- v) yield {
-        val d = gi.distance(gj)
-        if (d < 0.1) 0 else d
-      }
-  }
   def support(a:Array[Array[Double]],b:Array[Array[Double]]) = {
-    //      var result = 0.0
-    //      for ( i <- a.indices ; j <- a(i).indices)
-    //        result += (a(i)(j) - b(i)(j))*(a(i)(j) - b(i)(j))
-    //      result
     (for ( i <- a.indices ) yield{
       val q = a(i).indices.filter(_!=i).map(j=>a(i)(j))
       val p = b(i).indices.filter(_!=i).map(j=>b(i)(j))
       Math.abs(PearsonCorrelationSimilarity(q,p))
     }).sum/a.length
   }
-  def preliminaryDist(vector:Array[Genotype]) = {
-    var max = (0.0,0.0,0.0,0.0)
-    var min = (1.0,1.0,1.0,1.0)
-    for ( gt <- vector) {
-      max = (Math.max(max._1,gt.acgt(0)),Math.max(max._2,gt.acgt(1)),Math.max(max._3,gt.acgt(2)),Math.max(max._4,gt.acgt(3)))
-      min = (Math.min(min._1,gt.acgt(0)),Math.min(min._2,gt.acgt(1)),Math.min(min._3,gt.acgt(2)),Math.min(min._4,gt.acgt(3)))
-    }
-    (max._1-min._1)+(max._2-min._2)+(max._3-min._3)+(max._4-min._4)
-  }
   def getOneChromGVFromScanner:ArrayBuffer[(String,(Matrix,Matrix))] ={
     // scan this contig to get all snp sites
     val contig = bamScanner.getChrom
     val contiglen = bamScanner.header.getSequence(contig).getSequenceLength
-    val maxMisassembleSpan = bamScanner.header.getReferenceLength/100
-    var sites = new ArrayBuffer[(Int,Array[Genotype])](contiglen/1000)
+    var sites = new ArrayBuffer[(Int,GenotypeVector)](contiglen/1000)
     do {
-      val genotypeVector = bamScanner.get()
-      if ( !genotypeVector.exists(_.isUnreliable) && preliminaryDist(genotypeVector)>=0.4 &&
-        !genotypeVectorToDistanceMatrix(genotypeVector).exists(x=>{ val sx = x.sorted; sx.last-sx(1)<0.2})) {
-        sites.append((bamScanner.pos, genotypeVector))
+      val gv = new GenotypeVector(bamScanner.get())
+      if ( gv.isReliable && gv.isHeterogeneous) {
+        sites.append((bamScanner.pos, gv))
       }
     } while (bamScanner.nextPosition())
     val coverageLimit = bamScanner.getCoverageLimit
-    coverageLimit.foreach(x=>print(f"$x%.1f, "))
-    sites = sites.filter { x => !x._2.indices.exists(i=>x._2(i).sum>coverageLimit(i)) }
+    coverageLimit.foreach(x=>print(f"$x%.0f, "))
+    sites = sites.filter { case (_,gv) => !gv.consistentWithDepthLimit(coverageLimit) }
     if (sites.length<2) {
       println(f"\n[$contig] SNP: ${sites.length} sites (No enough SNP)")
       return new ArrayBuffer[(String,(Matrix,Matrix))]()
     } else {
       println(f"\n[$contig] SNP: ${sites.length} sites")
     }
-    val intervals = new ArrayBuffer[(Int,Int,Array[Genotype])](sites.length)
-    intervals.append((sites(0)._1,(sites(0)._1+sites(1)._1)/2,sites(0)._2))
-    for ( i <- 1 until sites.length-1) intervals.append((
-      (sites(i-1)._1+sites(i)._1)/2+1,
-      (sites(i+1)._1+sites(i)._1)/2,
-      sites(i)._2))
-    intervals.append(((sites(sites.length-2)._1+sites.last._1)/2+1,sites.last._1,sites.last._2))
     // train matrix
-    var headMatrix,tailMatrix = new Matrix(bamFilenames.length)
-    val snap = new ArrayBuffer[Matrix](intervals.length)
+    var headMatrix,tailMatrix = new Matrix(size=bamFilenames.length)
+    val snapshot = new ArrayBuffer[Matrix](sites.length)
     val segment = new ArrayBuffer[(String,(Matrix,Matrix))]()
-    for ( (start,end,vector) <- intervals){
-      val matrix = new Matrix(vector.length,genotypeVectorToDistanceMatrix(vector))
-      val decayN = Math.pow(decay,end-start+1)
+    var lastpos = 0
+    for ( (pos,gv) <- sites){
+      val matrix = new Matrix(gv.toDistMatrix)
+      val decayN = Math.pow(decay,pos-lastpos)
       tailMatrix *= decayN += (matrix *= ((1-decayN)/(1-decay)))
-      snap.append(tailMatrix.copy)
-//      new HeatChart(tailMatrix.data).saveToFile(new File(f"png/$start%07d~$end%07d R.png"))
+      snapshot.append(tailMatrix.copy)
+      lastpos = pos
     }
-    var last,i = intervals.length-1
-    for ( (start,end,vector) <- intervals.reverseIterator){
-      val matrix = new Matrix(vector.length,genotypeVectorToDistanceMatrix(vector))
-      val decayN = Math.pow(decay,end-start+1)
+    lastpos = contiglen + 1
+    var lastSegEnd = sites.length-1
+    for ( i <- sites.indices.reverse){
+      val (pos,gv) = sites(i)
+      val matrix = new Matrix(gv.toDistMatrix)
+      val decayN = Math.pow(decay,lastpos-pos)
       headMatrix *= decayN += (matrix *= ((1-decayN)/(1-decay)))
-      i -= 1
-      if (i>0 && //sites(i+1)._1-sites(i)._1<maxMisassembleSpan &&
-//        sites(last)._1-sites(i+1)._1>maxMisassembleSpan &&
-//        sites(i)._1>maxMisassembleSpan &&
-        support(snap(i).normalized.data,headMatrix.copy.normalized.data)<0.3){
-        val seg = (f"$contig[${sites(i)._1}~${sites(i+1)._1}:${
-          if (last==sites.length-1) contiglen else sites(last)._1}~${
-          if (last==sites.length-1) contiglen else sites(last+1)._1}]",
-          (headMatrix.copy.normalized,snap(last).copy.normalized))
+      if (0<i && support(snapshot(i-1).normalized.data,headMatrix.copy.normalized.data)<0.3){
+        val seg = (f"$contig[${sites(i-1)._1}~${sites(i)._1}:"+
+          f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd)._1}~"+
+          f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd+1)._1}]",
+          (headMatrix.copy.normalized,snapshot(lastSegEnd).copy.normalized))
         segment.append(seg)
-        last = i
+        lastSegEnd = i-1
       }
-//      new HeatChart(headMatrix.data).saveToFile(new File(f"png/$start%07d~$end%07d L.png"))
     }
-    val seg = (f"$contig[1~1:${
-      if (last==sites.length-1) contiglen else sites(last)._1}~${
-      if (last==sites.length-1) contiglen else sites(last+1)._1}]",
-      (headMatrix.copy.normalized,snap(last).copy.normalized))
+    val seg = (f"$contig[1~1:"+
+      f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd)._1}~"+
+      f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd+1)._1}]",
+      (headMatrix.copy.normalized,snapshot(lastSegEnd).copy.normalized))
     segment.append(seg)
     for ( (contig,(headMatrix,tailMatrix)) <- segment){
       new HeatChart(headMatrix.data).saveToFile(new File(s"png/$contig L.png"))
