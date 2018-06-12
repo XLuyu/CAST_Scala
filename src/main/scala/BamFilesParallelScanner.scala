@@ -41,9 +41,15 @@ class BamFileScanner(filename:String){
             spanReads.append(record)
           else {
             val read = record.getReadString
-            for ( i <- 1 to record.getReadLength if code.contains(read(i-1)) && record.getReferencePositionAtReadPosition(i)>0){
-              sw.inc(record.getReferencePositionAtReadPosition(i),code(read(i-1)))
-              if (bad) badRegion.inc(record.getReferencePositionAtReadPosition(i))
+            for ( i <- record.getStart to record.getEnd) {
+              val pos = record.getReadPositionAtReferencePosition(i)
+              if (pos==0) {
+                sw.inc(i,4)
+              } else {
+                val ch = read(record.getReadPositionAtReferencePosition(i)-1)
+                if (code.contains(ch)) sw.inc(i,code(ch))
+              }
+              if (bad) badRegion.inc(i)
             }
           }
         }
@@ -57,13 +63,16 @@ class BamFileScanner(filename:String){
       cached = 0
     }
     if (pos>cached) updateSpanReadsByPosition(cid,pos)
-    val vector = Array(0,0,0,0)
+    val vector = Array(0,0,0,0,0)
     var badCount = 0
     for ( record <- spanReads) {
       val rpos = record.getReadPositionAtReferencePosition(pos)
       if (rpos>0) {
         val c = record.getReadString()(rpos-1)
         if (code.contains(c)) vector(code(c)) += 1
+        if (isBadRead(record)) badCount += 1
+      } else if (record.getStart<=pos && pos <= record.getEnd){
+        vector(4) += 1
         if (isBadRead(record)) badCount += 1
       }
     }

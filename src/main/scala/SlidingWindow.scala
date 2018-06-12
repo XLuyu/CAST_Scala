@@ -1,10 +1,10 @@
 
 class SlidingWindowArray(val size:Int){
-  val window = Array.fill(size)(Array(0,0,0,0))
+  val window = Array.fill(size)(Array(0,0,0,0,0))
   def inc(i:Int,j:Int) = window(i%size)(j) += 1
   def getAndClean(i:Int) ={
     val s = window(i%size)
-    window(i%size) = Array(0,0,0,0)
+    window(i%size) = Array(0,0,0,0,0)
     s
   }
 }

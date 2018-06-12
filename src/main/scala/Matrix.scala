@@ -5,7 +5,7 @@ class Genotype(var acgt:Array[Double], val badCount:Int=0){
   val sum = acgt.sum
   if (sum!=0) acgt = acgt.map(_/sum)
   def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
-  def isReliable = 5 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum //todo: 1<=sum
+  def isReliable = 1 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum //todo: 1<=sum
   def distance(other:Genotype) = {
     if (this.isReliable && other.isReliable)
       (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
@@ -24,13 +24,13 @@ class GenotypeVector(val vector:Array[Genotype]){
   }
   def isReliable = vector.forall(_.isReliable)
   def isHeterogeneousPrecheck = {
-    var max = (0.0,0.0,0.0,0.0)
-    var min = (1.0,1.0,1.0,1.0)
+    var max = Array(0.0,0.0,0.0,0.0,0.0)
+    var min = Array(1.0,1.0,1.0,1.0,1.0)
     for ( gt <- vector) {
-      max = (Math.max(max._1,gt.acgt(0)),Math.max(max._2,gt.acgt(1)),Math.max(max._3,gt.acgt(2)),Math.max(max._4,gt.acgt(3)))
-      min = (Math.min(min._1,gt.acgt(0)),Math.min(min._2,gt.acgt(1)),Math.min(min._3,gt.acgt(2)),Math.min(min._4,gt.acgt(3)))
+      max = max zip gt.acgt map {x=>Math.max(x._1,x._2)}
+      min = min zip gt.acgt map {x=>Math.min(x._1,x._2)}
     }
-    (max._1-min._1)+(max._2-min._2)+(max._3-min._3)+(max._4-min._4)>=0.4
+    (max zip min map {x=>x._1-x._2}).sum>=0.4
   }
   def isHeterogeneous:Boolean = {
     if (!isHeterogeneousPrecheck) return false
