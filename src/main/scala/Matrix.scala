@@ -5,12 +5,12 @@ class Genotype(var acgt:Array[Double], val badCount:Int=0){
   val sum = acgt.sum
   if (sum!=0) acgt = acgt.map(_/sum)
   def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
-  def isReliable = 1 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum //todo: 1<=sum
+  val isReliable = 1 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
   def distance(other:Genotype) = {
     if (this.isReliable && other.isReliable)
-      (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
+      if (this.sum==0 || other.sum==0) Double.NaN else (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
     else
-      Double.NaN
+      throw new Exception("[Error] try to compute unreliably genotypes' distance!!")
   }
 }
 
@@ -22,11 +22,11 @@ class GenotypeVector(val vector:Array[Genotype]){
           if (d < 0.1) 0 else d
         }
   }
-  def isReliable = vector.forall(_.isReliable)
+  val isReliable = vector.forall(_.isReliable) && vector.count(_.sum==0)<=vector.length/2
   def isHeterogeneousPrecheck = {
     var max = Array(0.0,0.0,0.0,0.0,0.0)
     var min = Array(1.0,1.0,1.0,1.0,1.0)
-    for ( gt <- vector) {
+    for ( gt <- vector if gt.sum>0) {
       max = max zip gt.acgt map {x=>Math.max(x._1,x._2)}
       min = min zip gt.acgt map {x=>Math.min(x._1,x._2)}
     }
@@ -34,15 +34,12 @@ class GenotypeVector(val vector:Array[Genotype]){
   }
   def isHeterogeneous:Boolean = {
     if (!isHeterogeneousPrecheck) return false
-    !toDistMatrix.exists(x=>{ val sx = x.sorted; sx.last-sx(1)<0.2}) // to check if heterogeneity is not from mutation
+    !toDistMatrix.exists(x=>{ val sx = x.filter(!_.isNaN).sorted; sx.nonEmpty && sx.last-sx(1)<0.2}) // to check if heterogeneity is not from mutation
   }
-  def consistentWithDepth(cov:Array[Double]) = {
-    vector.indices.forall(i=>vector(i).sum<=cov(i)*1.8)
-
-    /*todo:
-      &&
-      Util.PearsonCorrelationSimilarity(,cov)<0.3
-      */
+  def consistentWithDepth(depth:Array[Double]) = {
+    val fold = vector.indices.map(i=>vector(i).sum/depth(i))
+    fold.forall(_<=1.8) &&
+    toDistMatrix.map(dv=>Math.abs(Util.PearsonCorrelationSimilarity(dv,fold))).sum/vector.length<0.8
   }
 }
 
