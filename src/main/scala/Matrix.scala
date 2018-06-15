@@ -69,6 +69,14 @@ class Matrix(var data:Array[Array[Double]]=null, size:Int=0){
     }
     this
   }
+  def updateBy(other:Matrix): Unit ={
+    for (i <- data.indices; j <- data(i).indices if !other.data(i)(j).isNaN)
+      data(i)(j) = other.data(i)(j)
+  }
+  def fill(v:Double): Unit ={
+    for (i <- data.indices; j <- data(i).indices) data(i)(j) = v
+  }
+  def contains(v:Double) = data.exists(_.contains(v))
   def printline(hint:String): Unit ={
     println(s"======$hint")
     for ( i <- data){

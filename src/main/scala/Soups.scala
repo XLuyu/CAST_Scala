@@ -42,37 +42,49 @@ class Soups(val bamFilenames:Array[String]){
       println(f"\n[$contig] SNP: ${sites.length} sites")
     }
     // train matrix
-    var headMatrix,tailMatrix = new Matrix(size=bamFilenames.length)
+    var rightScanSum, leftScanSum, matrix = new Matrix(size=bamFilenames.length)
     val snapshot = new ArrayBuffer[Matrix](sites.length)
     val segment = new ArrayBuffer[(String,(Matrix,Matrix))]()
     var lastpos = 0
+    matrix.fill(Double.NaN)
     for ( (pos,gv) <- sites){
-      val matrix = new Matrix(gv.toDistMatrix)
-      val decayN = Math.pow(decay,pos-lastpos)
-      tailMatrix *= decayN += (matrix *= ((1-decayN)/(1-decay)))
-      snapshot.append(tailMatrix.copy)
+      matrix.updateBy(new Matrix(gv.toDistMatrix))
+      if (!matrix.contains(Double.NaN)) {
+        val decayN = Math.pow(decay, pos - lastpos)
+        leftScanSum *= decayN += (matrix *= ((1 - decayN) / (1 - decay)))
+        snapshot.append(leftScanSum.copy)
+      } else
+        snapshot.append(null)
       lastpos = pos
     }
+    if (snapshot.last==null) {
+      println(f"\n[$contig] SNP: some sample is missing across whole contig")
+      return new ArrayBuffer[(String,(Matrix,Matrix))]()
+    }
     lastpos = contiglen + 1
+    matrix.fill(Double.NaN)
     var lastSegEnd = sites.length-1
     for ( i <- sites.indices.reverse){
       val (pos,gv) = sites(i)
-      val matrix = new Matrix(gv.toDistMatrix)
-      val decayN = Math.pow(decay,lastpos-pos)
-      headMatrix *= decayN += (matrix *= ((1-decayN)/(1-decay)))
-      if (0<i && support(snapshot(i-1).normalized.data,headMatrix.copy.normalized.data)<0.3){
-        val seg = (f"$contig[${sites(i-1)._1}~${sites(i)._1}:"+
-          f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd)._1}~"+
-          f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd+1)._1}]",
-          (headMatrix.copy.normalized,snapshot(lastSegEnd).copy.normalized))
-        segment.append(seg)
-        lastSegEnd = i-1
+      matrix.updateBy(new Matrix(gv.toDistMatrix))
+      if (!matrix.contains(Double.NaN)) {
+        val decayN = Math.pow(decay, lastpos - pos)
+        rightScanSum *= decayN += (matrix *= ((1 - decayN) / (1 - decay)))
+        if (0 < i && snapshot(i - 1)!=null && support(snapshot(i - 1).normalized.data, rightScanSum.copy.normalized.data) < 0.3) {
+          val seg = (f"$contig[${sites(i - 1)._1}~${sites(i)._1}:" +
+            f"${if (lastSegEnd == sites.length - 1) contiglen else sites(lastSegEnd)._1}~" +
+            f"${if (lastSegEnd == sites.length - 1) contiglen else sites(lastSegEnd + 1)._1}]",
+            (rightScanSum.copy.normalized, snapshot(lastSegEnd).copy.normalized))
+          segment.append(seg)
+          lastSegEnd = i - 1
+        }
       }
+      lastpos = pos
     }
     val seg = (f"$contig[1~1:"+
       f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd)._1}~"+
       f"${if (lastSegEnd==sites.length-1) contiglen else sites(lastSegEnd+1)._1}]",
-      (headMatrix.copy.normalized,snapshot(lastSegEnd).copy.normalized))
+      (rightScanSum.copy.normalized,snapshot(lastSegEnd).copy.normalized))
     segment.append(seg)
     for ( (contig,(headMatrix,tailMatrix)) <- segment){
       new HeatChart(headMatrix.data).saveToFile(new File(s"png/$contig L.png"))
