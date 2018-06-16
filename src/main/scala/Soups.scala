@@ -49,9 +49,9 @@ class Soups(val bamFilenames:Array[String]){
     matrix.fill(Double.NaN)
     for ( (pos,gv) <- sites){
       matrix.updateBy(new Matrix(gv.toDistMatrix))
-      if (!matrix.contains(Double.NaN)) {
+      if (!matrix.containsNaN) {
         val decayN = Math.pow(decay, pos - lastpos)
-        leftScanSum *= decayN += (matrix *= ((1 - decayN) / (1 - decay)))
+        leftScanSum *= decayN += (matrix * ((1 - decayN) / (1 - decay)))
         snapshot.append(leftScanSum.copy)
       } else
         snapshot.append(null)
@@ -67,9 +67,9 @@ class Soups(val bamFilenames:Array[String]){
     for ( i <- sites.indices.reverse){
       val (pos,gv) = sites(i)
       matrix.updateBy(new Matrix(gv.toDistMatrix))
-      if (!matrix.contains(Double.NaN)) {
+      if (!matrix.containsNaN) {
         val decayN = Math.pow(decay, lastpos - pos)
-        rightScanSum *= decayN += (matrix *= ((1 - decayN) / (1 - decay)))
+        rightScanSum *= decayN += (matrix * ((1 - decayN) / (1 - decay)))
         if (0 < i && snapshot(i - 1)!=null && support(snapshot(i - 1).normalized.data, rightScanSum.copy.normalized.data) < 0.3) {
           val seg = (f"$contig[${sites(i - 1)._1}~${sites(i)._1}:" +
             f"${if (lastSegEnd == sites.length - 1) contiglen else sites(lastSegEnd)._1}~" +
@@ -117,7 +117,7 @@ class Soups(val bamFilenames:Array[String]){
     val contigsOneEndGV = contigsTwoEndGV.flatMap {case (contig,(v1,v2)) => List(("+"+contig,v1),("-"+contig,v2))}
     val finalLink = pairwiseMutualBest(contigsOneEndGV)
     for ( (k,v) <- finalLink if k<v._1) {
-      println(k,v)
+      println(f"$k\t${v._1}\t${v._2}")
 //      stringer.put(k,v._1,v._2)
     }
 //    stringer.getPath.foreach(println)

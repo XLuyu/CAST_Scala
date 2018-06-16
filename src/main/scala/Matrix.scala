@@ -5,7 +5,7 @@ class Genotype(var acgt:Array[Double], val badCount:Int=0){
   val sum = acgt.sum
   if (sum!=0) acgt = acgt.map(_/sum)
   def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
-  val isReliable = 1 <= sum && (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
+  val isReliable =  (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
   def distance(other:Genotype) = {
     if (this.isReliable && other.isReliable)
       if (this.sum==0 || other.sum==0) Double.NaN else (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2
@@ -50,6 +50,12 @@ class Matrix(var data:Array[Array[Double]]=null, size:Int=0){
       data(i)(j) *= factor
     this
   }
+  def *(factor:Double) = {
+    val rt = this.copy
+    for (i <- rt.data.indices; j <- rt.data(i).indices)
+      rt.data(i)(j) *= factor
+    rt
+  }
   def +=(other:Matrix) = {
     for (i <- data.indices; j <- data(i).indices)
       data(i)(j) += other.data(i)(j)
@@ -76,7 +82,7 @@ class Matrix(var data:Array[Array[Double]]=null, size:Int=0){
   def fill(v:Double): Unit ={
     for (i <- data.indices; j <- data(i).indices) data(i)(j) = v
   }
-  def contains(v:Double) = data.exists(_.contains(v))
+  def containsNaN = data.exists(_.exists(_.isNaN))
   def printline(hint:String): Unit ={
     println(s"======$hint")
     for ( i <- data){

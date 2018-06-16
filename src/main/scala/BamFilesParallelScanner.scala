@@ -41,13 +41,14 @@ class BamFileScanner(filename:String){
             spanReads.append(record)
           else {
             val read = record.getReadString
+            val qual = record.getBaseQualities
             for ( i <- record.getStart to record.getEnd) {
               val pos = record.getReadPositionAtReferencePosition(i)
               if (pos==0) {
                 sw.inc(i,4)
               } else {
-                val ch = read(record.getReadPositionAtReferencePosition(i)-1)
-                if (code.contains(ch)) sw.inc(i,code(ch))
+                val ch = read(pos-1)
+                if (code.contains(ch) && qual(pos-1)>=20) sw.inc(i,code(ch))
               }
               if (bad) badRegion.inc(i)
             }
