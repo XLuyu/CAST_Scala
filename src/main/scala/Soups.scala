@@ -1,13 +1,8 @@
 import java.io.File
-import java.util
 import org.tc33.jheatchart.HeatChart
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import htsjdk._
-import htsjdk.samtools.SAMRecord
-import me.tongfei.progressbar._
-import org.jgrapht.alg.matching.MaximumWeightBipartiteMatching
-import org.jgrapht.graph._
 
 class Soups(val bamFilenames: Array[String]) {
   val decay = 0.99995
@@ -91,7 +86,7 @@ class Soups(val bamFilenames: Array[String]) {
       val (j, k, l) = (segment(i - 1), segment(i), segment(i + 1))
       if (j._1._1 == k._1._2 && k._1._1 == l._1._2) {
         segment(i + 1) = ((l._1._1, k._1._2), (l._2._1, k._2._2))
-        segment(i) = null
+        segment(i) = (k._1,null)
       }
     }
     val named_segment = segment.filter(_ != null).map(x => (f"$contig${x._1._1}${x._1._2}", x._2))
