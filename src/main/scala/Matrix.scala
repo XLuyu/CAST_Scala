@@ -4,8 +4,8 @@
 class Genotype(var acgt:Array[Double], val badCount:Int=0){
   val sum = acgt.sum
   if (sum!=0) acgt = acgt.map(_/sum)
-  def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
-  val isReliable =  (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
+//  def isNonRepeat = (acgt.max>=0.9 || badCount<=0.1*sum) && badCount <= 0.9 * sum
+  val isReliable = badCount<=0.1*sum
   def distance(other:Genotype) = {
     if (this.isReliable && other.isReliable)
       if (this.sum==0 || other.sum==0) Double.NaN else (this.acgt zip other.acgt map {case (x,y)=>Math.abs(x-y)}).sum / 2

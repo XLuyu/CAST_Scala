@@ -14,10 +14,10 @@ class BamFileScanner(filename:String){
 
   val code = Map[Char,Int]('A'->0,'C'->1,'G'->2,'T'->3)
   var cached = 0
-  var cigarRegex = raw"(\d+)[SH]".r
+  var cigarRegex = raw"(\d+)[SHDI]".r
 
-  def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getMateReferenceName!=read.getReferenceName ||
-                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).sum+read.getIntegerAttribute("NM")>0.1*read.getReadLength ||
+  def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getMateUnmappedFlag || read.getMateReferenceName!=read.getReferenceName ||
+                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).map(x=>x*x).sum+read.getIntegerAttribute("NM")>0.1*read.getReadLength ||
                                   read.hasAttribute("XA")
 
   def updateSpanReadsByPosition(cid:Int,pos:Int): Unit ={

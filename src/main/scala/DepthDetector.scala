@@ -14,7 +14,7 @@ class BamFileDetector(filename:String) extends BamFileScanner(filename){
     val badCount = badRegion.getAndClean(pos)
     val count = sw.getAndClean(pos)
     val genotype = new Genotype(count.map(_.toDouble),badCount)
-    if (genotype.isNonRepeat) coverageStat(count.sum) += 1
+    if (genotype.isReliable) coverageStat(count.sum) += 1
     genotype
   }
   def getCoverage = {
