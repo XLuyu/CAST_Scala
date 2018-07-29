@@ -3,12 +3,14 @@ import org.tc33.jheatchart.HeatChart
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import htsjdk._
+import org.rogach.scallop._
+import org.apache.commons.io.FileUtils
 
-class Soups(val bamFilenames: Array[String]) {
+class Soups(conf:Conf) {
+  val bamFilenames = conf.bamFiles().toArray
   val decay = 0.99995
   val coverage = new DepthDetector(bamFilenames).getCoverage
   val bamScanner = new BamFilesParallelScanner(bamFilenames)
-  val stringer = new Stringer()
   print(coverage.map(_.toInt).mkString("\nDepth:","|","\n"))
 
   def support(a: Array[Array[Double]], b: Array[Array[Double]]) = {
@@ -30,11 +32,14 @@ class Soups(val bamFilenames: Array[String]) {
       }
     } while (bamScanner.nextPosition())
     sites = sites.filter { case (_, gv) => gv.consistentWithDepth(coverage) }
-    if (sites.length < 2) {
+    if (sites.length < 1) {
       println(f"\n[$contig] SNP: ${sites.length} sites (No enough SNP)")
       return new ArrayBuffer[(String, (Matrix, Matrix))]()
     } else {
       println(f"\n[$contig] SNP: ${sites.length} sites")
+    }
+    if (sites.length < 10) {
+      sites.foreach(println)
     }
     // train matrix
     var rightScanSum, leftScanSum, matrix = new Matrix(size = bamFilenames.length)
@@ -90,9 +95,11 @@ class Soups(val bamFilenames: Array[String]) {
       }
     }
     val named_segment = segment.filter(_ != null).map(x => (f"$contig${x._1._1}${x._1._2}", x._2))
-    for ((name, (headMatrix, tailMatrix)) <- named_segment) {
-      new HeatChart(headMatrix.data).saveToFile(new File(s"png/${name}_L.png"))
-      new HeatChart(tailMatrix.data).saveToFile(new File(s"png/${name}_R.png"))
+    if (conf.heatmap()) {
+      for ((name, (headMatrix, tailMatrix)) <- named_segment) {
+        new HeatChart(headMatrix.data).saveToFile(new File(conf.heatmapDir+File.separator+s"${name}_L.png"))
+        new HeatChart(tailMatrix.data).saveToFile(new File(conf.heatmapDir+File.separator+s"${name}_R.png"))
+      }
     }
     named_segment
   }
@@ -115,19 +122,36 @@ class Soups(val bamFilenames: Array[String]) {
     candidate
   }
   def run(): Unit = {
-    //    val coverages = bamScanner.getCoverage
-    //    println(coverages.mkString(" "))
     val contigsTwoEndGV = getAllGVFromScanner
     val contigsOneEndGV = contigsTwoEndGV.flatMap { case (contig, (v1, v2)) => List(("+" + contig, v1), ("-" + contig, v2)) }
     val finalLink = pairwiseMutualBest(contigsOneEndGV)
+    if (conf.reportFile.exists) conf.reportFile.delete()
     for ((k, v) <- finalLink if k < v._1) {
-      println(f"$k\t${v._1}\t${v._2}")
-      //      stringer.put(k,v._1,v._2)
+      FileUtils.write(conf.reportFile,f"$k\t${v._1}\t${v._2}\n",true)
     }
-    //    stringer.getPath.foreach(println)
   }
+}
+class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val output = opt[String](default = Some("CAST_output"))
+  val heatmap = opt[Boolean]()
+  val draftFile = trailArg[String](required = true)
+  val bamFiles = trailArg[List[String]](required = true)
+  verify()
+  val outDir = new File(output.apply())
+  val blastTmpDir = new File(outDir+File.separator+"blast_tmp")
+  if (!blastTmpDir.exists) blastTmpDir.mkdirs()
+  val heatmapDir = new File(outDir+File.separator+"heatmap")
+  if (!heatmapDir.exists) heatmapDir.mkdirs()
+  val reportFile = new File(outDir+File.separator+"report")
+  val outputFasta = new File(outDir+File.separator+"CAST.fasta")
 }
 
 object Soups {
-  def main(args: Array[String]): Unit = new Soups(args).run()
+  def main(args: Array[String]) {
+    val conf = new Conf(args)
+    new Soups(conf).run()
+    val stringer = new Stringer(conf)
+    stringer.loadEdgeFromFile(conf.reportFile.getAbsolutePath)
+    stringer.correctAndScaffoldFasta()
+  }
 }

@@ -2,6 +2,7 @@
   * Created by workshop on 12-Jun-18.
   */
 object Util {
+  val complementary = Map[Char,Char]('A' -> 'T', 'C' -> 'G', 'G' -> 'C', 'T' -> 'A').withDefault(x=>x)
   def PearsonCorrelationSimilarity(rawA: IndexedSeq[Double], rawB: IndexedSeq[Double]): Double = {
     val AB = rawA zip rawB filter(x => !x._1.isNaN && !x._2.isNaN)
     if (AB.length<2) return 0
