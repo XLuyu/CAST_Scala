@@ -17,7 +17,7 @@ class BamFileScanner(filename:String){
   var cigarRegex = raw"(\d+)[SHDI]".r
 
   def isBadRead(read:SAMRecord) = read.getMappingQuality<30 || read.getMateUnmappedFlag || read.getMateReferenceName!=read.getReferenceName ||
-                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).map(x=>x*x).sum+read.getIntegerAttribute("NM")>0.1*read.getReadLength ||
+                                  cigarRegex.findAllMatchIn(read.getCigarString).map(_.group(1).toInt).map(x=>x*x-1).sum+read.getIntegerAttribute("NM")>0.1*read.getReadLength ||
                                   read.hasAttribute("XA")
 
   def updateSpanReadsByPosition(cid:Int,pos:Int): Unit ={

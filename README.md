@@ -34,9 +34,10 @@ java -jar CAST.jar myassembly.fasta bamfiles/*.bam
 ```
 
 ## Output
-CAST generates two output files in current folder:
+
 * `report` contains candidate links inferred by genetic information. (intermediate output for check)
-* `merge.fasta` is the improved assembly. (final output)
+* `CAST.fasta` is the improved assembly. (final output)
+* `heatmap` folder contains heatmaps for both ends of all contigs (by `--heatmap` option)
 
 ## FAQ
 
@@ -63,10 +64,12 @@ It basically depends on the amount of data as well as your disk access performan
 
 ## Run on docker
 
-1. Download and install docker. It's available for most platforms.
-2. Run docker to install CAST: `$docker pull taoistly/CAST`
+1. Download and install docker. It's available for most platforms. (need root privilege)
+2. Run docker to install CAST: `$docker pull taoistly/cast`
 3. Place bam and fasta file in a folder
-4. Run CAST: `docker run -t taoistly/CAST -v /path/to/files:/data` 
+4. Run CAST: `docker run -tv /path/to/the/folder:/data taoistly/cast ` 
+
+** Because of a technical limitation of docker, for Windows user, /path/to/files should be a folder under C:\users\yourUsername\ and type the path in the way like /c/users/yourUsername/somefolder **
 
 ## Citation
 To be published
